@@ -2,13 +2,12 @@
 #include <math.h>
 #include <stdlib.h>
 
+// Macro for setting error code
 #define SETERROR(err)                                                          \
-  do {                                                                         \
-    if (error)                                                                 \
-      *error = (err);                                                          \
-  } while (0)
+  if (error)                                                                   \
+  *error = (err)
 
-// Constants
+// Constants for Nelder-Mead algorithm
 const double ALPHA = 1.0; // Reflection coefficient
 const double BETA = 0.5;  // Contraction coefficient
 const double GAMMA = 2.0; // Expansion coefficient
@@ -23,24 +22,23 @@ static OPT_Error allocate_memory(double ***simplex, double **function_values,
 static void free_memory(double **simplex, double *function_values,
                         double *centroid, double *x_r, double *x_e, double *x_c,
                         int n);
-static void update_simplex_and_function(double **simplex,
-                                        double *function_values,
-                                        double *new_point, double new_value,
-                                        int n);
+static void update_simplex(double **simplex, double *function_values,
+                           double *new_point, double new_value, int n);
 
-// Nelder-Mead method for multivariate minimization
+// Main Nelder-Mead optimization function
 void OPT_NelderMead(double (*f)(double *, int, void *), double *xmin, int n,
                     void *params, double tol, int max_iter, double initial_step,
                     OPT_Error *error) {
   double **simplex, *function_values, *centroid, *x_r, *x_e, *x_c;
   int iter_count = 0;
 
+  // Allocate memory for simplex and other arrays
   OPT_Error err_code = allocate_memory(&simplex, &function_values, &centroid,
                                        &x_r, &x_e, &x_c, n);
   if (err_code != OPT_ERROR_SUCCESS) {
+    SETERROR(err_code);
     return;
   }
-  SETERROR(err_code);
 
   // Initialize simplex
   for (int i = 0; i <= n; i++) {
@@ -50,8 +48,11 @@ void OPT_NelderMead(double (*f)(double *, int, void *), double *xmin, int n,
     function_values[i] = f(simplex[i], n, params);
   }
 
+  // Main optimization loop
   while (iter_count < max_iter) {
+    // Order simplex vertices
     order_simplex(simplex, function_values, n);
+    // Calculate centroid of n best points
     calculate_centroid(simplex, centroid, n);
 
     // Reflection
@@ -61,16 +62,15 @@ void OPT_NelderMead(double (*f)(double *, int, void *), double *xmin, int n,
     double f_r = f(x_r, n, params);
 
     if (function_values[0] <= f_r && f_r < function_values[n - 1]) {
-      update_simplex_and_function(simplex, function_values, x_r, f_r, n);
+      update_simplex(simplex, function_values, x_r, f_r, n);
     } else if (f_r < function_values[0]) {
       // Expansion
       for (int j = 0; j < n; j++) {
         x_e[j] = centroid[j] + GAMMA * (x_r[j] - centroid[j]);
       }
       double f_e = f(x_e, n, params);
-      update_simplex_and_function(simplex, function_values,
-                                  f_e < f_r ? x_e : x_r, f_e < f_r ? f_e : f_r,
-                                  n);
+      update_simplex(simplex, function_values, f_e < f_r ? x_e : x_r,
+                     f_e < f_r ? f_e : f_r, n);
     } else {
       // Contraction
       for (int j = 0; j < n; j++) {
@@ -78,7 +78,7 @@ void OPT_NelderMead(double (*f)(double *, int, void *), double *xmin, int n,
       }
       double f_c = f(x_c, n, params);
       if (f_c < function_values[n]) {
-        update_simplex_and_function(simplex, function_values, x_c, f_c, n);
+        update_simplex(simplex, function_values, x_c, f_c, n);
       } else {
         // Shrinkage
         for (int i = 1; i <= n; i++) {
@@ -114,24 +114,22 @@ void OPT_NelderMead(double (*f)(double *, int, void *), double *xmin, int n,
     xmin[i] = simplex[0][i];
   }
 
+  // Free allocated memory
   free_memory(simplex, function_values, centroid, x_r, x_e, x_c, n);
-  if (error) {
-    *error = (iter_count == max_iter) ? OPT_ERROR_MAX_ITERATIONS_REACHED
-                                      : OPT_ERROR_SUCCESS;
-  }
+  SETERROR((iter_count == max_iter) ? OPT_ERROR_MAX_ITERATIONS_REACHED
+                                    : OPT_ERROR_SUCCESS);
 }
 
-// Helper function to update simplex and function values
-static void update_simplex_and_function(double **simplex,
-                                        double *function_values,
-                                        double *new_point, double new_value,
-                                        int n) {
+// Update simplex with new point and function value
+static void update_simplex(double **simplex, double *function_values,
+                           double *new_point, double new_value, int n) {
   for (int j = 0; j < n; j++) {
     simplex[n][j] = new_point[j];
   }
   function_values[n] = new_value;
 }
 
+// Calculate centroid of the n best points
 static void calculate_centroid(double **simplex, double *centroid, int n) {
   for (int j = 0; j < n; j++) {
     centroid[j] = 0.0;
@@ -142,14 +140,17 @@ static void calculate_centroid(double **simplex, double *centroid, int n) {
   }
 }
 
+// Order simplex vertices based on function values
 static void order_simplex(double **simplex, double *function_values, int n) {
   for (int i = 0; i < n; i++) {
     for (int j = i + 1; j < n + 1; j++) {
       if (function_values[i] > function_values[j]) {
+        // Swap function values
         double temp_value = function_values[i];
         function_values[i] = function_values[j];
         function_values[j] = temp_value;
 
+        // Swap simplex vertices
         double *temp_vertex = simplex[i];
         simplex[i] = simplex[j];
         simplex[j] = temp_vertex;
@@ -158,6 +159,7 @@ static void order_simplex(double **simplex, double *function_values, int n) {
   }
 }
 
+// Allocate memory for simplex and other arrays
 static OPT_Error allocate_memory(double ***simplex, double **function_values,
                                  double **centroid, double **x_r, double **x_e,
                                  double **x_c, int n) {
@@ -190,6 +192,7 @@ static OPT_Error allocate_memory(double ***simplex, double **function_values,
   return OPT_ERROR_SUCCESS;
 }
 
+// Free allocated memory
 static void free_memory(double **simplex, double *function_values,
                         double *centroid, double *x_r, double *x_e, double *x_c,
                         int n) {

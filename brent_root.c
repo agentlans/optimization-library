@@ -2,13 +2,12 @@
 #include <float.h>
 #include <math.h>
 
+// Macro to set error if error pointer is not NULL
 #define SETERROR(err)                                                          \
-  do {                                                                         \
-    if (error)                                                                 \
-      *error = (err);                                                          \
-  } while (0)
+  if (error)                                                                   \
+  *error = (err)
 
-// Function prototypes for forward declaration
+// Function prototypes
 static void swap(double *x, double *y);
 static double compute_s(double a, double b, double c, double fa, double fb,
                         double fc);
@@ -17,17 +16,16 @@ static int should_bisect(double s, double a, double b, double c, double d,
 static void update_interval(double *a, double *b, double *fa, double *fb,
                             double s, double fs);
 
+// Brent's method for root finding
 double OPT_BrentRoot(double (*f)(double, void *), double a, double b,
                      void *params, double tol, int max_iter, OPT_Error *error) {
+  // Compute function values at interval endpoints
+  double fa = f(a, params), fb = f(b, params);
 
-  // Compute initial function values
-  double fa = f(a, params);
-  double fb = f(b, params);
-
-  // Check if the root is bracketed
+  // Check if root is bracketed
   if (fa * fb >= 0) {
     SETERROR(OPT_ERROR_INVALID_BRACKET);
-    return NAN; // Return NaN to indicate failure
+    return NAN;
   }
 
   // Ensure |f(a)| >= |f(b)|
@@ -36,30 +34,31 @@ double OPT_BrentRoot(double (*f)(double, void *), double a, double b,
     swap(&fa, &fb);
   }
 
-  double c = a;   // Initialize c to a
-  int mflag = 1;  // Flag for bisection method
-  double d = 0.0; // Previous step size
+  double c = a, d = 0.0, fc, fs, s;
+  int mflag = 1; // Flag for bisection method
 
   for (int iter = 0; iter < max_iter; iter++) {
-    double fc = f(c, params); // Evaluate f at c
+    fc = f(c, params);
 
-    // Inverse quadratic interpolation or secant method
-    double s = compute_s(a, b, c, fa, fb, fc);
+    // Compute next approximation
+    s = compute_s(a, b, c, fa, fb, fc);
 
-    // Check conditions for s and apply bisection if necessary
+    // Check if bisection is needed
     if (should_bisect(s, a, b, c, d, mflag)) {
-      s = (a + b) / 2; // Bisection method
-      mflag = 1;       // Set mflag
+      s = (a + b) / 2; // Use bisection
+      mflag = 1;
     } else {
-      mflag = 0; // Clear mflag
+      mflag = 0;
     }
 
-    double fs = f(s, params); // Evaluate f at s
+    fs = f(s, params);
+    d = c;
+    c = b;
 
-    // Update interval [a,b]
+    // Update interval [a, b]
     update_interval(&a, &b, &fa, &fb, s, fs);
 
-    // Ensure |f(a)| >= |f(b)| after each iteration
+    // Ensure |f(a)| >= |f(b)|
     if (fabs(fa) < fabs(fb)) {
       swap(&a, &b);
       swap(&fa, &fb);
@@ -68,61 +67,47 @@ double OPT_BrentRoot(double (*f)(double, void *), double a, double b,
     // Check for convergence
     if ((fabs(b - a) < tol && fabs(fs) < tol) || fs == 0.0) {
       SETERROR(OPT_ERROR_SUCCESS);
-      return s; // Return the root found within tolerance
+      return s;
     }
   }
 
-  SETERROR(OPT_ERROR_MAX_ITERATIONS_REACHED); // Indicate that max iterations
-                                              // were reached
-  return NAN; // Return NaN to indicate failure to converge
+  SETERROR(OPT_ERROR_MAX_ITERATIONS_REACHED);
+  return NAN;
 }
 
-// Helper function to swap two doubles
+// Swap two double values
 static void swap(double *x, double *y) {
   double temp = *x;
   *x = *y;
   *y = temp;
 }
 
-// Compute the next approximation using inverse quadratic interpolation
-static double compute_inv_quad_s(double a, double b, double c, double fa,
-                                 double fb, double fc) {
-  double R = fb / fc;
-  double S = fb / fa;
-  double T = fa / fc;
-  double P = S * (T * (R - T) * (c - b) - (1 - R) * (b - a));
-  double Q = (T - 1) * (R - 1) * (S - 1);
-  return b + P / Q;
-}
-
-static double compute_secant_s(double a, double b, double fa, double fb) {
-  // Compute the next approximation using the secant method formula
-  return b - fb * (b - a) / (fb - fa);
-}
-
-// Compute the next guess for the root using inverse quadratic interpolation or
-// secant method
+// Compute next approximation using inverse quadratic interpolation or secant
+// method
 static double compute_s(double a, double b, double c, double fa, double fb,
                         double fc) {
   if (fa != fb && fa != fc && fb != fc) {
-    return compute_inv_quad_s(a, b, c, fa, fb, fc);
+    // Inverse quadratic interpolation
+    double R = fb / fc, S = fb / fa, T = fa / fc;
+    double P = S * (T * (R - T) * (c - b) - (1 - R) * (b - a));
+    double Q = (T - 1) * (R - 1) * (S - 1);
+    return b + P / Q;
   } else {
-    return compute_secant_s(a, b, fa, fb);
+    // Secant method
+    return b - fb * (b - a) / (fb - fa);
   }
 }
 
-// Determine whether to use the bisection method based on various conditions
+// Determine if bisection should be used
 static int should_bisect(double s, double a, double b, double c, double d,
                          int mflag) {
   double lower_bound = (3 * a + b) / 4;
-  double upper_bound = b;
-
-  return (s < lower_bound || s > upper_bound ||
+  return (s < lower_bound || s > b ||
           (mflag && fabs(s - b) >= fabs(b - c) / 2) ||
           (!mflag && fabs(s - b) >= fabs(c - d) / 2));
 }
 
-// Update the interval [a,b] based on the value of s and fs
+// Update the interval [a, b] based on new approximation
 static void update_interval(double *a, double *b, double *fa, double *fb,
                             double s, double fs) {
   if (*fa * fs < 0) {
